@@ -37,6 +37,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import jdk.internal.misc.Blocker;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static sun.nio.ch.EPoll.EPOLLIN;
 import static sun.nio.ch.EPoll.EPOLL_CTL_ADD;
@@ -66,11 +67,11 @@ class EPollSelectorImpl extends SelectorImpl {
     private final Map<Integer, SelectionKeyImpl> fdToKey = new HashMap<>();
 
     // pending new registrations/updates, queued by setEventOps
-    private final Object updateLock = new Object();
+    private final ReentrantLock updateLock = new ReentrantLock();
     private final Deque<SelectionKeyImpl> updateKeys = new ArrayDeque<>();
 
     // interrupt triggering and clearing
-    private final Object interruptLock = new Object();
+    private final ReentrantLock interruptLock = new ReentrantLock();
     private boolean interruptTriggered;
 
     EPollSelectorImpl(SelectorProvider sp) throws IOException {
@@ -147,7 +148,8 @@ class EPollSelectorImpl extends SelectorImpl {
     private void processUpdateQueue() {
         assert Thread.holdsLock(this);
 
-        synchronized (updateLock) {
+        this.updateLock.lock();
+        try {
             SelectionKeyImpl ski;
             while ((ski = updateKeys.pollFirst()) != null) {
                 if (ski.isValid()) {
@@ -175,6 +177,8 @@ class EPollSelectorImpl extends SelectorImpl {
                     }
                 }
             }
+        } finally {
+            this.updateLock.unlock();
         }
     }
 
@@ -215,8 +219,11 @@ class EPollSelectorImpl extends SelectorImpl {
         assert Thread.holdsLock(this);
 
         // prevent further wakeup
-        synchronized (interruptLock) {
+        this.interruptLock.lock();
+        try {
             interruptTriggered = true;
+        } finally {
+            this.interruptLock.unlock();
         }
 
         FileDispatcherImpl.closeIntFD(epfd);
@@ -244,14 +251,18 @@ class EPollSelectorImpl extends SelectorImpl {
     @Override
     public void setEventOps(SelectionKeyImpl ski) {
         ensureOpen();
-        synchronized (updateLock) {
+        this.updateLock.lock();
+        try {
             updateKeys.addLast(ski);
+        } finally {
+            this.updateLock.unlock();
         }
     }
 
     @Override
     public Selector wakeup() {
-        synchronized (interruptLock) {
+        this.interruptLock.lock();
+        try {
             if (!interruptTriggered) {
                 try {
                     eventfd.set();
@@ -260,14 +271,19 @@ class EPollSelectorImpl extends SelectorImpl {
                 }
                 interruptTriggered = true;
             }
+        } finally {
+            this.interruptLock.unlock();
         }
         return this;
     }
 
     private void clearInterrupt() throws IOException {
-        synchronized (interruptLock) {
+        this.interruptLock.lock();
+        try {
             eventfd.reset();
             interruptTriggered = false;
+        } finally {
+            this.interruptLock.unlock();
         }
     }
 }
