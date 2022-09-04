@@ -29,6 +29,7 @@ import java.lang.ref.Cleaner;
 import java.lang.ref.Reference;
 import java.lang.ref.PhantomReference;
 import java.util.Objects;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * PhantomCleanable subclasses efficiently encapsulate cleanup state and
@@ -52,6 +53,7 @@ public abstract class PhantomCleanable<T> extends PhantomReference<T>
      * The list of PhantomCleanable; synchronizes insert and remove.
      */
     private final PhantomCleanable<?> list;
+    private final ReentrantLock listLock = new ReentrantLock();
 
     /**
      * Constructs new {@code PhantomCleanable} with
@@ -84,11 +86,14 @@ public abstract class PhantomCleanable<T> extends PhantomReference<T>
      * Insert this PhantomCleanable after the list head.
      */
     private void insert() {
-        synchronized (list) {
+        listLock.lock();
+        try {
             prev = list;
             next = list.next;
             next.prev = this;
             list.next = this;
+        } finally {
+            listLock.unlock();
         }
     }
 
@@ -99,7 +104,8 @@ public abstract class PhantomCleanable<T> extends PhantomReference<T>
      * it had already been removed before
      */
     private boolean remove() {
-        synchronized (list) {
+        listLock.lock();
+        try {
             if (next != this) {
                 next.prev = prev;
                 prev.next = next;
@@ -108,6 +114,8 @@ public abstract class PhantomCleanable<T> extends PhantomReference<T>
                 return true;
             }
             return false;
+        } finally {
+            listLock.unlock();
         }
     }
 
@@ -117,8 +125,11 @@ public abstract class PhantomCleanable<T> extends PhantomReference<T>
      * @return true if the list is empty
      */
     boolean isListEmpty() {
-        synchronized (list) {
+        listLock.lock();
+        try {
             return list == list.next;
+        } finally {
+            listLock.unlock();
         }
     }
 

@@ -28,6 +28,7 @@ package jdk.internal.ref;
 import java.lang.ref.*;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
+import java.util.concurrent.locks.ReentrantLock;
 
 
 /**
@@ -71,41 +72,52 @@ public class Cleaner
     //
     private static Cleaner first = null;
 
+    private static final ReentrantLock lock = new ReentrantLock();
+
     private Cleaner
         next = null,
         prev = null;
 
-    private static synchronized Cleaner add(Cleaner cl) {
-        if (first != null) {
-            cl.next = first;
-            first.prev = cl;
+    private static Cleaner add(Cleaner cl) {
+        lock.lock();
+        try {
+            if (first != null) {
+                cl.next = first;
+                first.prev = cl;
+            }
+            first = cl;
+            return cl;
+        } finally {
+            lock.unlock();
         }
-        first = cl;
-        return cl;
     }
 
-    private static synchronized boolean remove(Cleaner cl) {
+    private static boolean remove(Cleaner cl) {
+        lock.lock();
+        try {
+            // If already removed, do nothing
+            if (cl.next == cl)
+                return false;
 
-        // If already removed, do nothing
-        if (cl.next == cl)
-            return false;
-
-        // Update list
-        if (first == cl) {
+            // Update list
+            if (first == cl) {
+                if (cl.next != null)
+                    first = cl.next;
+                else
+                    first = cl.prev;
+            }
             if (cl.next != null)
-                first = cl.next;
-            else
-                first = cl.prev;
-        }
-        if (cl.next != null)
-            cl.next.prev = cl.prev;
-        if (cl.prev != null)
-            cl.prev.next = cl.next;
+                cl.next.prev = cl.prev;
+            if (cl.prev != null)
+                cl.prev.next = cl.next;
 
-        // Indicate removal by pointing the cleaner to itself
-        cl.next = cl;
-        cl.prev = cl;
-        return true;
+            // Indicate removal by pointing the cleaner to itself
+            cl.next = cl;
+            cl.prev = cl;
+            return true;
+        } finally {
+            lock.unlock();
+        }
 
     }
 
