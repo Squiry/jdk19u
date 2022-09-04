@@ -170,8 +170,9 @@ public class ThreadLocal<T> {
     /**
      * Returns the value in the current carrier thread's copy of this
      * thread-local variable.
+     * @return the value in the current carrier thread's copy of this thread-local variable.
      */
-    T getCarrierThreadLocal() {
+    public T getCarrierThreadLocal() {
         return get(Thread.currentCarrierThread());
     }
 
@@ -248,7 +249,14 @@ public class ThreadLocal<T> {
         set(Thread.currentThread(), value);
     }
 
-    void setCarrierThreadLocal(T value) {
+    /**
+     * Sets the current thread's carrier thread's copy of this thread-local variable
+     * to the specified value.
+     *
+     * @param value the value to be stored in the current thread's carrier thread's copy of
+     *        this thread-local.
+     */
+    public void setCarrierThreadLocal(T value) {
         set(Thread.currentCarrierThread(), value);
     }
 
